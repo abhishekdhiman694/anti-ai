@@ -204,6 +204,11 @@
   #msg.ok { color: var(--active); }
   #msg .mono { background: var(--surface-2); padding: 1px 6px; border-radius: 4px; }
 
+  #mainMsg { font-size: 13px; margin-bottom: 12px; line-height: 1.5; }
+  #mainMsg:empty { display: none; }
+  #mainMsg.error { color: var(--revoked); }
+  #mainMsg.ok { color: var(--active); }
+
   #createMsg { font-size: 13px; margin-top: 12px; line-height: 1.6; }
   #createMsg.error { color: var(--revoked); }
   #createMsg .credential-box {
@@ -230,6 +235,9 @@
   .modal h3 { margin: 0 0 4px; font-size: 15px; }
   .modal .modal-sub { font-size: 12.5px; color: var(--text-dim); margin-bottom: 14px; }
   .modal .actions { justify-content: flex-end; }
+  #modalMsg { font-size: 12.5px; margin-top: 10px; }
+  #modalMsg:empty { display: none; }
+  #modalMsg.error { color: var(--revoked); }
 
   @media (prefers-reduced-motion: no-preference) {
     .card, .stat { animation: rise 0.25s ease-out; }
@@ -316,6 +324,7 @@
         <span class="sync-note" id="syncNote"></span>
         <button class="icon-btn" onclick="refreshTokens()">Refresh</button>
       </div>
+      <div id="mainMsg"></div>
       <div class="table-scroll">
         <table>
           <thead><tr><th>Username</th><th>Label</th><th>Status</th><th>Expires</th><th>Issued</th><th>Actions</th></tr></thead>
@@ -341,6 +350,15 @@ if (ADMIN_SECRET) document.getElementById('adminSecret').value = ADMIN_SECRET;
 
 function showMsg(html, isError) {
   const el = document.getElementById('msg');
+  el.innerHTML = html;
+  el.className = isError ? 'error' : 'ok';
+}
+
+// Same as showMsg, but for feedback after you're already connected - #msg
+// lives inside the connect card, which is hidden once connected, so errors
+// written there (a failed delete/revoke/extend) were invisible.
+function showMainMsg(html, isError) {
+  const el = document.getElementById('mainMsg');
   el.innerHTML = html;
   el.className = isError ? 'error' : 'ok';
 }
@@ -429,8 +447,11 @@ async function createToken() {
     await api('/admin/tokens', { method: 'POST', body: JSON.stringify({ username, password, hours, label }) });
     createMsg.className = '';
     createMsg.innerHTML = `Access issued, valid for ${hours}h.
-      <div class="credential-box mono">${username} / ${password}
-      <button class="small secondary" onclick="copyText('${username} / ${password}', this)">Copy</button></div>`;
+      <div class="credential-box mono"><span id="freshCred"></span>
+      <button class="small secondary" id="copyCredBtn">Copy</button></div>`;
+    const credText = `${username} / ${password}`;
+    createMsg.querySelector('#freshCred').textContent = credText;
+    createMsg.querySelector('#copyCredBtn').addEventListener('click', function () { copyText(credText, this); });
     document.getElementById('newUsername').value = '';
     document.getElementById('newPassword').value = '';
     document.getElementById('newLabel').value = '';
@@ -444,9 +465,10 @@ async function createToken() {
 async function setRevoked(username, revoked) {
   try {
     await api('/admin/tokens/' + encodeURIComponent(username), { method: 'PATCH', body: JSON.stringify({ revoked }) });
+    showMainMsg('', false);
     refreshTokens();
   } catch (e) {
-    showMsg('Failed: ' + e.message, true);
+    showMainMsg(`Could not ${revoked ? 'deactivate' : 'reactivate'} '${username}': ` + e.message, true);
   }
 }
 
@@ -454,9 +476,10 @@ async function deleteToken(username) {
   if (!confirm(`Permanently delete '${username}'? This can't be undone — to just pause access instead, use Deactivate.`)) return;
   try {
     await api('/admin/tokens/' + encodeURIComponent(username), { method: 'DELETE' });
+    showMainMsg(`Deleted '${username}'.`, false);
     refreshTokens();
   } catch (e) {
-    showMsg('Failed: ' + e.message, true);
+    showMainMsg(`Could not delete '${username}': ` + e.message, true);
   }
 }
 
@@ -470,7 +493,7 @@ function openExtendModal(username, currentExpiresAt) {
   const currentStr = new Date(currentExpiresAt * 1000).toLocaleString();
   overlay.innerHTML = `
     <div class="modal">
-      <h3>Extend access — <span class="mono">${username}</span></h3>
+      <h3>Extend access — <span class="mono" id="extendModalUser"></span></h3>
       <div class="modal-sub">Currently expires ${currentStr}. Choose how many hours from now it should stay valid.</div>
       <label for="extendHours">Hours from now</label>
       <input id="extendHours" class="mono" type="number" value="3" min="0.1" step="0.5" oninput="syncQuickpicks('extendHours','extendQuickpicks')">
@@ -480,11 +503,15 @@ function openExtendModal(username, currentExpiresAt) {
         <span class="quickpick" data-h="24" onclick="setHours('extendHours','extendQuickpicks',24)">24h</span>
         <span class="quickpick" data-h="168" onclick="setHours('extendHours','extendQuickpicks',168)">7d</span>
       </div>
+      <div id="modalMsg"></div>
       <div class="actions">
-        <button class="secondary" onclick="closeModal()">Cancel</button>
-        <button onclick="submitExtend('${username}')">Set new expiry</button>
+        <button class="secondary" id="extendCancelBtn">Cancel</button>
+        <button id="extendSubmitBtn">Set new expiry</button>
       </div>
     </div>`;
+  overlay.querySelector('#extendModalUser').textContent = username;
+  overlay.querySelector('#extendCancelBtn').addEventListener('click', closeModal);
+  overlay.querySelector('#extendSubmitBtn').addEventListener('click', () => submitExtend(username));
   overlay.classList.remove('hidden');
   overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
 }
@@ -495,9 +522,12 @@ async function submitExtend(username) {
   try {
     await api('/admin/tokens/' + encodeURIComponent(username), { method: 'PATCH', body: JSON.stringify({ extend_hours: hours }) });
     closeModal();
+    showMainMsg(`Extended '${username}'.`, false);
     refreshTokens();
   } catch (e) {
-    showMsg('Failed: ' + e.message, true);
+    const el = document.getElementById('modalMsg');
+    el.className = 'error';
+    el.textContent = 'Failed: ' + e.message;
   }
 }
 
@@ -538,25 +568,36 @@ function renderTokens() {
     const status = entry.revoked ? 'revoked' : (now > entry.expires_at ? 'expired' : 'active');
     const expires = new Date(entry.expires_at * 1000).toLocaleString();
     const created = new Date(entry.created_at * 1000).toLocaleDateString();
-    const toggleBtn = entry.revoked
-      ? `<button class="small ghost-active" onclick="setRevoked('${username}', false)">Reactivate</button>`
-      : `<button class="small danger" onclick="setRevoked('${username}', true)">Deactivate</button>`;
     const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td class="mono">${username}</td>
-      <td>${entry.label || ''}</td>
-      <td><span class="chip ${status}">${status}</span></td>
-      <td>
-        <div class="mono expiry-main">${expires}</div>
-        <div class="expiry-rel">${relativeTime(entry.expires_at)}</div>
-      </td>
-      <td class="mono">${created}</td>
-      <td class="actions-cell">
-        <button class="small secondary" onclick="openExtendModal('${username}', ${entry.expires_at})">Extend</button>
-        ${toggleBtn}
-        <button class="small icon-btn" onclick="deleteToken('${username}')">Delete</button>
-      </td>
-    `;
+
+    // Built via textContent/DOM nodes (not interpolated onclick strings) so a
+    // username or label containing a quote can never break a button's handler.
+    const tdUser = document.createElement('td'); tdUser.className = 'mono'; tdUser.textContent = username;
+    const tdLabel = document.createElement('td'); tdLabel.textContent = entry.label || '';
+    const tdStatus = document.createElement('td');
+    tdStatus.innerHTML = `<span class="chip ${status}">${status}</span>`;
+    const tdExpires = document.createElement('td');
+    tdExpires.innerHTML = `<div class="mono expiry-main"></div><div class="expiry-rel"></div>`;
+    tdExpires.querySelector('.expiry-main').textContent = expires;
+    tdExpires.querySelector('.expiry-rel').textContent = relativeTime(entry.expires_at);
+    const tdCreated = document.createElement('td'); tdCreated.className = 'mono'; tdCreated.textContent = created;
+
+    const tdActions = document.createElement('td'); tdActions.className = 'actions-cell';
+    const extendBtn = document.createElement('button');
+    extendBtn.className = 'small secondary'; extendBtn.textContent = 'Extend';
+    extendBtn.addEventListener('click', () => openExtendModal(username, entry.expires_at));
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = entry.revoked ? 'small ghost-active' : 'small danger';
+    toggleBtn.textContent = entry.revoked ? 'Reactivate' : 'Deactivate';
+    toggleBtn.addEventListener('click', () => setRevoked(username, !entry.revoked));
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'small icon-btn'; deleteBtn.textContent = 'Delete';
+    deleteBtn.addEventListener('click', () => deleteToken(username));
+
+    tdActions.append(extendBtn, toggleBtn, deleteBtn);
+    tr.append(tdUser, tdLabel, tdStatus, tdExpires, tdCreated, tdActions);
     rows.appendChild(tr);
   }
 }
@@ -567,7 +608,7 @@ async function refreshTokens() {
     renderTokens();
     document.getElementById('syncNote').textContent = 'Synced ' + new Date().toLocaleTimeString();
   } catch (e) {
-    showMsg('Failed to load tokens: ' + e.message, true);
+    showMainMsg('Failed to load tokens: ' + e.message, true);
   }
 }
 
