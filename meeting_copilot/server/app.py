@@ -317,6 +317,12 @@ class CreateTokenRequest(BaseModel):
     label: str = ""
 
 
+class UpdateTokenRequest(BaseModel):
+    revoked: bool | None = None       # set True to deactivate, False to reactivate
+    extend_hours: float | None = None  # if set, expiry becomes now + extend_hours
+    label: str | None = None
+
+
 @app.post("/admin/tokens")
 def create_token(req: CreateTokenRequest, _admin=Depends(require_admin)):
     tokens = _load_tokens()
@@ -347,11 +353,38 @@ def list_tokens(_admin=Depends(require_admin)):
     }
 
 
-@app.delete("/admin/tokens/{username}")
-def revoke_token(username: str, _admin=Depends(require_admin)):
+@app.patch("/admin/tokens/{username}")
+def update_token(username: str, req: UpdateTokenRequest, _admin=Depends(require_admin)):
+    """Deactivate/reactivate a credential, extend its expiry, or relabel it -
+    without needing to delete and recreate it (which would also reset its
+    password)."""
     tokens = _load_tokens()
     if username not in tokens:
         raise HTTPException(status_code=404, detail="not found")
-    tokens[username]["revoked"] = True
+    if req.revoked is not None:
+        tokens[username]["revoked"] = req.revoked
+    if req.extend_hours is not None:
+        tokens[username]["expires_at"] = time.time() + req.extend_hours * 3600
+    if req.label is not None:
+        tokens[username]["label"] = req.label
+    _save_tokens(tokens)
+    entry = tokens[username]
+    return {
+        "ok": True,
+        "username": username,
+        "expires_at": entry["expires_at"],
+        "revoked": entry["revoked"],
+        "label": entry["label"],
+    }
+
+
+@app.delete("/admin/tokens/{username}")
+def delete_token(username: str, _admin=Depends(require_admin)):
+    """Permanently remove a credential. To just stop it working (and keep
+    the record around, reversibly), use PATCH with revoked=true instead."""
+    tokens = _load_tokens()
+    if username not in tokens:
+        raise HTTPException(status_code=404, detail="not found")
+    del tokens[username]
     _save_tokens(tokens)
     return {"ok": True}
