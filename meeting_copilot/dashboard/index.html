@@ -255,10 +255,8 @@
 
   <div class="card" id="connectCard">
     <h2>Connect</h2>
-    <label for="serverUrl">Server URL</label>
-    <input id="serverUrl" class="mono" placeholder="https://your-app.onrender.com">
     <label for="adminSecret">Admin secret</label>
-    <input id="adminSecret" class="mono" type="password" placeholder="the ADMIN_SECRET you set on the server">
+    <input id="adminSecret" class="mono" type="password" placeholder="the ADMIN_SECRET you set on the server" autofocus onkeydown="if(event.key==='Enter')connect()">
     <div class="actions">
       <button onclick="connect()">Connect</button>
     </div>
@@ -331,12 +329,14 @@
 <div id="modalOverlay" class="modal-overlay hidden"></div>
 
 <script>
-let SERVER_URL = localStorage.getItem('mc_server_url') || '';
+// Your backend's URL - fixed here so opening the dashboard only asks for the
+// admin secret. Change this if you ever move the backend to a new host.
+const SERVER_URL = 'https://meeting-copilot-backend-yj53.onrender.com';
+
 let ADMIN_SECRET = localStorage.getItem('mc_admin_secret') || '';
 let TOKENS = {};
 let autoRefreshTimer = null;
 
-if (SERVER_URL) document.getElementById('serverUrl').value = SERVER_URL;
 if (ADMIN_SECRET) document.getElementById('adminSecret').value = ADMIN_SECRET;
 
 function showMsg(html, isError) {
@@ -358,15 +358,13 @@ async function api(path, options = {}) {
 }
 
 async function connect() {
-  SERVER_URL = document.getElementById('serverUrl').value.trim();
   ADMIN_SECRET = document.getElementById('adminSecret').value;
-  if (!SERVER_URL || !ADMIN_SECRET) {
-    showMsg('Enter both fields.', true);
+  if (!ADMIN_SECRET) {
+    showMsg('Enter the admin secret.', true);
     return;
   }
   try {
     await api('/admin/tokens');
-    localStorage.setItem('mc_server_url', SERVER_URL);
     localStorage.setItem('mc_admin_secret', ADMIN_SECRET);
     showMsg('', false);
     document.getElementById('connectCard').classList.add('hidden');
@@ -381,10 +379,9 @@ async function connect() {
 }
 
 function disconnect() {
-  localStorage.removeItem('mc_server_url');
   localStorage.removeItem('mc_admin_secret');
   if (autoRefreshTimer) clearInterval(autoRefreshTimer);
-  SERVER_URL = ''; ADMIN_SECRET = ''; TOKENS = {};
+  ADMIN_SECRET = ''; TOKENS = {};
   document.getElementById('adminSecret').value = '';
   document.getElementById('connectCard').classList.remove('hidden');
   document.getElementById('connWrap').classList.add('hidden');
@@ -574,7 +571,7 @@ async function refreshTokens() {
   }
 }
 
-if (SERVER_URL && ADMIN_SECRET) connect();
+if (ADMIN_SECRET) connect();
 </script>
 </body>
 </html>
