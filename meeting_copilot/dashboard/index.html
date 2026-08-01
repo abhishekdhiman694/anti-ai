@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Access Console — Meeting Copilot</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #faf7f0;
+    --surface: #ffffff;
+    --surface-2: #f2ede1;
+    --border: #ddd3bd;
+    --text: #211a10;
+    --text-dim: #6b6152;
+    --accent: #a97a2e;
+    --accent-hover: #8f6725;
+    --accent-text: #fffaf0;
+    --focus: #a97a2e;
+    --active: #3f7d43;
+    --active-bg: #e4efe1;
+    --expired: #9c7a3f;
+    --expired-bg: #f2e9d5;
+    --revoked: #a8433c;
+    --revoked-bg: #f5e2df;
+    --shadow: 0 1px 2px rgba(33, 26, 16, 0.06), 0 8px 24px -12px rgba(33, 26, 16, 0.18);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15130f;
+      --surface: #1c1914;
+      --surface-2: #23201a;
+      --border: #38332a;
+      --text: #f1eadd;
+      --text-dim: #a89c85;
+      --accent: #c9974a;
+      --accent-hover: #dcab5e;
+      --accent-text: #1a1510;
+      --focus: #c9974a;
+      --active: #7fbd80;
+      --active-bg: #1e2d1e;
+      --expired: #cfa863;
+      --expired-bg: #2e2717;
+      --revoked: #d9847c;
+      --revoked-bg: #2e1c1a;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15130f;
+    --surface: #1c1914;
+    --surface-2: #23201a;
+    --border: #38332a;
+    --text: #f1eadd;
+    --text-dim: #a89c85;
+    --accent: #c9974a;
+    --accent-hover: #dcab5e;
+    --accent-text: #1a1510;
+    --focus: #c9974a;
+    --active: #7fbd80;
+    --active-bg: #1e2d1e;
+    --expired: #cfa863;
+    --expired-bg: #2e2717;
+    --revoked: #d9847c;
+    --revoked-bg: #2e1c1a;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+  }
+  :root[data-theme="light"] {
+    --bg: #faf7f0;
+    --surface: #ffffff;
+    --surface-2: #f2ede1;
+    --border: #ddd3bd;
+    --text: #211a10;
+    --text-dim: #6b6152;
+    --accent: #a97a2e;
+    --accent-hover: #8f6725;
+    --accent-text: #fffaf0;
+    --focus: #a97a2e;
+    --active: #3f7d43;
+    --active-bg: #e4efe1;
+    --expired: #9c7a3f;
+    --expired-bg: #f2e9d5;
+    --revoked: #a8433c;
+    --revoked-bg: #f5e2df;
+    --shadow: 0 1px 2px rgba(33, 26, 16, 0.06), 0 8px 24px -12px rgba(33, 26, 16, 0.18);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); margin: 0;
+    padding: 40px 20px 64px;
+  }
+  .mono {
+    font-family: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .wrap { max-width: 760px; margin: 0 auto; }
+
+  .masthead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+  .masthead .eyebrow {
+    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--accent); font-weight: 700;
+  }
+  h1 { font-size: 22px; margin: 4px 0 6px; letter-spacing: -0.01em; text-wrap: balance; }
+  .sub { color: var(--text-dim); font-size: 13.5px; margin-bottom: 28px; max-width: 60ch; line-height: 1.5; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px; margin-bottom: 18px; box-shadow: var(--shadow);
+  }
+  .card h2 {
+    font-size: 13px; margin: 0 0 14px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-dim); font-weight: 700;
+  }
+
+  label { display: block; font-size: 12px; color: var(--text-dim); margin: 12px 0 5px; font-weight: 600; }
+  label:first-child { margin-top: 0; }
+  input {
+    width: 100%; padding: 9px 11px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text); font-size: 14px; font-family: inherit;
+  }
+  input.mono::placeholder { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  input:focus { outline: 2px solid var(--focus); outline-offset: 1px; border-color: var(--focus); }
+
+  .actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+  button {
+    background: var(--accent); color: var(--accent-text); border: none; border-radius: 6px;
+    padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit;
+  }
+  button:hover { background: var(--accent-hover); }
+  button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  button.secondary:hover { background: var(--surface-2); }
+  button.danger { background: transparent; color: var(--revoked); border: 1px solid var(--revoked); padding: 5px 10px; font-size: 12px; }
+  button.danger:hover { background: var(--revoked-bg); }
+
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 520px) { .row { grid-template-columns: 1fr; } }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); }
+  th {
+    color: var(--text-dim); font-weight: 700; font-size: 10.5px;
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.empty { color: var(--text-dim); font-style: italic; }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px 2px 7px;
+    border-radius: 100px; font-size: 11px; font-weight: 700;
+  }
+  .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; }
+  .chip.active { background: var(--active-bg); color: var(--active); }
+  .chip.active::before { background: var(--active); }
+  .chip.expired { background: var(--expired-bg); color: var(--expired); }
+  .chip.expired::before { background: var(--expired); }
+  .chip.revoked { background: var(--revoked-bg); color: var(--revoked); }
+  .chip.revoked::before { background: var(--revoked); }
+
+  #msg { font-size: 13px; margin-top: 12px; min-height: 18px; line-height: 1.5; }
+  #msg.error { color: var(--revoked); }
+  #msg.ok { color: var(--active); }
+  #msg .mono { background: var(--surface-2); padding: 1px 6px; border-radius: 4px; }
+
+  .hidden { display: none; }
+  .table-scroll { overflow-x: auto; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .card { animation: rise 0.25s ease-out; }
+    @keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div>
+      <div class="eyebrow">Meeting Copilot</div>
+      <h1>Access console</h1>
+    </div>
+  </div>
+  <div class="sub">Issue, inspect, and revoke time-limited credentials for your backend. Every request here goes straight to your own server — nothing passes through anything else.</div>
+
+  <div class="card" id="connectCard">
+    <h2>Connect</h2>
+    <label for="serverUrl">Server URL</label>
+    <input id="serverUrl" class="mono" placeholder="https://your-app.onrender.com">
+    <label for="adminSecret">Admin secret</label>
+    <input id="adminSecret" class="mono" type="password" placeholder="the ADMIN_SECRET you set on the server">
+    <div class="actions">
+      <button onclick="connect()">Connect</button>
+    </div>
+    <div id="msg"></div>
+  </div>
+
+  <div id="mainArea" class="hidden">
+    <div class="card">
+      <h2>Issue new access</h2>
+      <div class="row">
+        <div>
+          <label for="newUsername">Username</label>
+          <input id="newUsername" class="mono" placeholder="alice">
+        </div>
+        <div>
+          <label for="newPassword">Password</label>
+          <input id="newPassword" class="mono" placeholder="random string">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="newHours">Valid for (hours)</label>
+          <input id="newHours" class="mono" type="number" value="3" min="0.1" step="0.5">
+        </div>
+        <div>
+          <label for="newLabel">Label (just for you)</label>
+          <input id="newLabel" placeholder="Alice — interview 8/2">
+        </div>
+      </div>
+      <div class="actions">
+        <button onclick="createToken()">Issue access</button>
+        <button onclick="generatePassword()" class="secondary">Generate password</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Credentials</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Username</th><th>Label</th><th>Status</th><th>Expires</th><th></th></tr></thead>
+          <tbody id="tokenRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let SERVER_URL = localStorage.getItem('mc_server_url') || '';
+let ADMIN_SECRET = localStorage.getItem('mc_admin_secret') || '';
+
+if (SERVER_URL) document.getElementById('serverUrl').value = SERVER_URL;
+if (ADMIN_SECRET) document.getElementById('adminSecret').value = ADMIN_SECRET;
+
+function showMsg(html, isError) {
+  const el = document.getElementById('msg');
+  el.innerHTML = html;
+  el.className = isError ? 'error' : 'ok';
+}
+
+async function api(path, options = {}) {
+  const resp = await fetch(SERVER_URL.replace(/\/$/, '') + path, {
+    ...options,
+    headers: { 'X-Admin-Secret': ADMIN_SECRET, 'Content-Type': 'application/json', ...(options.headers || {}) },
+  });
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    throw new Error(body.detail || `HTTP ${resp.status}`);
+  }
+  return resp.json();
+}
+
+async function connect() {
+  SERVER_URL = document.getElementById('serverUrl').value.trim();
+  ADMIN_SECRET = document.getElementById('adminSecret').value;
+  if (!SERVER_URL || !ADMIN_SECRET) {
+    showMsg('Enter both fields.', true);
+    return;
+  }
+  try {
+    await api('/admin/tokens');
+    localStorage.setItem('mc_server_url', SERVER_URL);
+    localStorage.setItem('mc_admin_secret', ADMIN_SECRET);
+    showMsg('Connected.', false);
+    document.getElementById('mainArea').classList.remove('hidden');
+    refreshTokens();
+  } catch (e) {
+    showMsg('Could not connect: ' + e.message, true);
+  }
+}
+
+function generatePassword() {
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  const pw = Array.from(bytes, b => b.toString(36)).join('').slice(0, 16);
+  document.getElementById('newPassword').value = pw;
+}
+
+async function createToken() {
+  const username = document.getElementById('newUsername').value.trim();
+  const password = document.getElementById('newPassword').value;
+  const hours = parseFloat(document.getElementById('newHours').value);
+  const label = document.getElementById('newLabel').value.trim();
+  if (!username || !password || !hours) {
+    showMsg('Fill in username, password, and hours.', true);
+    return;
+  }
+  try {
+    await api('/admin/tokens', { method: 'POST', body: JSON.stringify({ username, password, hours, label }) });
+    showMsg(`Created <span class="mono">${username}</span>. Give them: <span class="mono">${username}</span> / <span class="mono">${password}</span>`, false);
+    document.getElementById('newUsername').value = '';
+    document.getElementById('newPassword').value = '';
+    document.getElementById('newLabel').value = '';
+    refreshTokens();
+  } catch (e) {
+    showMsg('Failed: ' + e.message, true);
+  }
+}
+
+async function revokeToken(username) {
+  if (!confirm(`Revoke access for '${username}'? This takes effect immediately, even mid-session.`)) return;
+  try {
+    await api('/admin/tokens/' + encodeURIComponent(username), { method: 'DELETE' });
+    refreshTokens();
+  } catch (e) {
+    showMsg('Failed: ' + e.message, true);
+  }
+}
+
+async function refreshTokens() {
+  try {
+    const tokens = await api('/admin/tokens');
+    const rows = document.getElementById('tokenRows');
+    rows.innerHTML = '';
+    const now = Date.now() / 1000;
+    const entries = Object.entries(tokens).sort((a, b) => b[1].created_at - a[1].created_at);
+    if (entries.length === 0) {
+      rows.innerHTML = '<tr><td class="empty" colspan="5">No credentials issued yet.</td></tr>';
+      return;
+    }
+    for (const [username, entry] of entries) {
+      const status = entry.revoked ? 'revoked' : (now > entry.expires_at ? 'expired' : 'active');
+      const expires = new Date(entry.expires_at * 1000).toLocaleString();
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="mono">${username}</td>
+        <td>${entry.label || ''}</td>
+        <td><span class="chip ${status}">${status}</span></td>
+        <td class="mono">${expires}</td>
+        <td>${status === 'revoked' ? '' : `<button class="danger" onclick="revokeToken('${username}')">Revoke</button>`}</td>
+      `;
+      rows.appendChild(tr);
+    }
+  } catch (e) {
+    showMsg('Failed to load tokens: ' + e.message, true);
+  }
+}
+
+if (SERVER_URL && ADMIN_SECRET) connect();
+</script>
+</body>
+</html>
