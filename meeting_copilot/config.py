@@ -3,10 +3,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# The backend server holds the real OpenAI key/prompts - update this to your
-# deployed Render URL before building the exe you hand out. Left pointing at
-# localhost by default for local dev/testing.
-SERVER_URL = os.getenv("MEETING_COPILOT_SERVER_URL", "http://127.0.0.1:8000")
+# The backend server holds the real OpenAI key/prompts - this is the deployed
+# Render URL. Override with MEETING_COPILOT_SERVER_URL for local dev/testing
+# against a local server instead.
+SERVER_URL = os.getenv(
+    "MEETING_COPILOT_SERVER_URL", "https://meeting-copilot-backend-yj53.onrender.com"
+)
 
 # Audio capture
 SAMPLE_RATE = 16000
