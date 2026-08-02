@@ -14,9 +14,11 @@ screen sharing/recording via SetWindowDisplayAffinity (see ui.py).
 
 All "thinking" (transcription, vision, QA) happens on a backend server -
 this client never talks to OpenAI directly and holds no API key. It signs
-in with a username/password issued by whoever set up your access, and the
-server re-checks that credential (including expiry) on every request, not
-just once at login - so access can be time-limited and revoked centrally.
+in with a username/password issued by whoever set up your access - that
+username/password can only be exchanged for a session ONCE, ever - and the
+server re-checks the resulting session (including expiry/revocation) on
+every request, not just once at login - so access can be time-limited and
+revoked centrally.
 
 Run: double-click run.bat (or `python main.py` from an activated venv).
 """
@@ -52,10 +54,12 @@ def _persisted_creds_path() -> Path:
 
 def _ensure_login() -> bool:
     """Signs in with a username/password issued by whoever set up your
-    access. Every launch re-validates against the server - credentials
-    expire on a timer, so a saved username/password only saves retyping,
-    it never skips re-validation. Returns False if the user cancels or the
-    server can't be reached."""
+    access. That username/password can only be exchanged for a session
+    ONCE, ever - so this only succeeds on the very first launch after the
+    credential was issued (or after the owner reactivates it). A saved
+    username/password just saves retyping on that first launch; it doesn't
+    grant a second login on a later relaunch. Returns False if the user
+    cancels, the credential can't be used, or the server can't be reached."""
     persisted = _persisted_creds_path()
     saved = dotenv_values(persisted) if persisted.exists() else {}
     username, password = saved.get("MC_USERNAME"), saved.get("MC_PASSWORD")
@@ -321,7 +325,7 @@ def main():
     def check_login_still_valid():
         def worker():
             try:
-                api_client.login()
+                api_client.check_session()
             except api_client.AuthError as e:
                 status_queue.put(_describe_error(e))
             except RuntimeError:

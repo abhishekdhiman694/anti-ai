@@ -59,8 +59,10 @@ def _hash_password(password: str, salt: str) -> str:
 
 
 def require_auth(credentials: HTTPBasicCredentials = Depends(security)) -> str:
-    """Re-validated on EVERY request, not just at login - an expired or
-    revoked credential stops working immediately, even mid-session."""
+    """Password check used only at /login. Re-validates username/password,
+    expiry, and revoked status - but does NOT gate the actual feature
+    endpoints, since a username/password can only be used to log in once
+    (see require_session)."""
     tokens = _load_tokens()
     entry = tokens.get(credentials.username)
     if not entry or entry.get("revoked"):
@@ -70,6 +72,24 @@ def require_auth(credentials: HTTPBasicCredentials = Depends(security)) -> str:
     if time.time() > entry["expires_at"]:
         raise HTTPException(status_code=401, detail="credential expired")
     return credentials.username
+
+
+def require_session(x_session_token: str = Header(default="")) -> str:
+    """Gates every feature endpoint. Re-validated on EVERY request, not just
+    at login - an expired or revoked credential stops working immediately,
+    even mid-session. Keyed off the one-time session token issued by /login,
+    not the raw password, since the password itself is single-use."""
+    if not x_session_token:
+        raise HTTPException(status_code=401, detail="not signed in")
+    tokens = _load_tokens()
+    for username, entry in tokens.items():
+        if entry.get("session_token") and secrets.compare_digest(entry["session_token"], x_session_token):
+            if entry.get("revoked"):
+                raise HTTPException(status_code=401, detail="invalid credentials")
+            if time.time() > entry["expires_at"]:
+                raise HTTPException(status_code=401, detail="credential expired")
+            return username
+    raise HTTPException(status_code=401, detail="invalid or expired session")
 
 
 def require_admin(x_admin_secret: str = Header(default="")):
@@ -191,12 +211,35 @@ def health():
 
 @app.post("/login")
 def login(username: str = Depends(require_auth)):
+    """A username/password can only be exchanged for a session ONE time,
+    regardless of how much time is left on the credential - logging in
+    again (even on the same machine, even seconds later) is rejected once
+    this has been consumed. The owner can reset this from the dashboard's
+    Reactivate action without issuing a new credential."""
     tokens = _load_tokens()
-    return {"ok": True, "expires_at": tokens[username]["expires_at"]}
+    entry = tokens[username]
+    if entry.get("session_token"):
+        raise HTTPException(
+            status_code=403,
+            detail="this credential has already been used to sign in and can't be reused - ask the owner for a new one",
+        )
+    session_token = secrets.token_urlsafe(24)
+    entry["session_token"] = session_token
+    tokens[username] = entry
+    _save_tokens(tokens)
+    return {"ok": True, "expires_at": entry["expires_at"], "session_token": session_token}
+
+
+@app.get("/session-status")
+def session_status(_user: str = Depends(require_session)):
+    """Lightweight re-validation of an existing session - unlike /login,
+    calling this does NOT consume a login, so it's safe for the client's
+    periodic background health check."""
+    return {"ok": True}
 
 
 @app.post("/analyze-text")
-def analyze_text(req: TextRequest, _user: str = Depends(require_auth)):
+def analyze_text(req: TextRequest, _user: str = Depends(require_session)):
     if not req.snippet or len(req.snippet.strip()) < 3:
         return {"answer": None}
     resp = _client.chat.completions.create(
@@ -236,7 +279,7 @@ def _transcribe_and_analyze(wav_bytes: bytes, source: str) -> str | None:
 
 
 @app.post("/analyze-audio")
-def analyze_audio(req: AudioRequest, _user: str = Depends(require_auth)):
+def analyze_audio(req: AudioRequest, _user: str = Depends(require_session)):
     wav_bytes = base64.b64decode(req.wav_b64)
     if not wav_bytes:
         return {"answer": None}
@@ -262,7 +305,7 @@ def analyze_audio(req: AudioRequest, _user: str = Depends(require_auth)):
 
 
 @app.post("/transcribe")
-def transcribe(req: AudioRequest, _user: str = Depends(require_auth)):
+def transcribe(req: AudioRequest, _user: str = Depends(require_session)):
     import io
     wav_bytes = base64.b64decode(req.wav_b64)
     buf = io.BytesIO(wav_bytes)
@@ -275,7 +318,7 @@ def transcribe(req: AudioRequest, _user: str = Depends(require_auth)):
 
 
 @app.post("/answer-query")
-def answer_query(req: QueryRequest, _user: str = Depends(require_auth)):
+def answer_query(req: QueryRequest, _user: str = Depends(require_session)):
     if not req.query or not req.query.strip():
         return {"answer": None}
     resp = _client.chat.completions.create(
@@ -292,7 +335,7 @@ def answer_query(req: QueryRequest, _user: str = Depends(require_auth)):
 
 
 @app.post("/extract-screen")
-def extract_screen(req: ImageRequest, _user: str = Depends(require_auth)):
+def extract_screen(req: ImageRequest, _user: str = Depends(require_session)):
     resp = _client.chat.completions.create(
         model=VISION_MODEL,
         messages=[{
@@ -334,6 +377,7 @@ def create_token(req: CreateTokenRequest, _admin=Depends(require_admin)):
         "label": req.label,
         "created_at": time.time(),
         "revoked": False,
+        "session_token": None,  # set on first /login - a second login is rejected
     }
     _save_tokens(tokens)
     return {"ok": True, "username": req.username, "expires_at": tokens[req.username]["expires_at"]}
@@ -348,6 +392,7 @@ def list_tokens(_admin=Depends(require_admin)):
             "expires_at": entry["expires_at"],
             "created_at": entry["created_at"],
             "revoked": entry.get("revoked", False),
+            "used": bool(entry.get("session_token")),
         }
         for username, entry in tokens.items()
     }
@@ -363,6 +408,11 @@ def update_token(username: str, req: UpdateTokenRequest, _admin=Depends(require_
         raise HTTPException(status_code=404, detail="not found")
     if req.revoked is not None:
         tokens[username]["revoked"] = req.revoked
+        if req.revoked is False:
+            # Reactivating clears the one-time login lock too, so the
+            # existing username/password can sign in again without having
+            # to issue a brand new credential.
+            tokens[username]["session_token"] = None
     if req.extend_hours is not None:
         tokens[username]["expires_at"] = time.time() + req.extend_hours * 3600
     if req.label is not None:
@@ -375,6 +425,7 @@ def update_token(username: str, req: UpdateTokenRequest, _admin=Depends(require_
         "expires_at": entry["expires_at"],
         "revoked": entry["revoked"],
         "label": entry["label"],
+        "used": bool(entry.get("session_token")),
     }
 
 

@@ -576,6 +576,12 @@ function renderTokens() {
     const tdLabel = document.createElement('td'); tdLabel.textContent = entry.label || '';
     const tdStatus = document.createElement('td');
     tdStatus.innerHTML = `<span class="chip ${status}">${status}</span>`;
+    if (entry.used) {
+      const usedNote = document.createElement('div');
+      usedNote.className = 'expiry-rel';
+      usedNote.textContent = 'signed in already';
+      tdStatus.appendChild(usedNote);
+    }
     const tdExpires = document.createElement('td');
     tdExpires.innerHTML = `<div class="mono expiry-main"></div><div class="expiry-rel"></div>`;
     tdExpires.querySelector('.expiry-main').textContent = expires;

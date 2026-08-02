@@ -60,7 +60,8 @@ def list_tokens():
         status = "REVOKED" if entry["revoked"] else ("EXPIRED" if now > entry["expires_at"] else "active")
         expires = datetime.fromtimestamp(entry["expires_at"], tz=timezone.utc).astimezone()
         label = f" ({entry['label']})" if entry["label"] else ""
-        print(f"{username}{label}: {status}, expires {expires:%Y-%m-%d %H:%M %Z}")
+        used = ", already signed in once" if entry.get("used") else ", not yet used"
+        print(f"{username}{label}: {status}{used}, expires {expires:%Y-%m-%d %H:%M %Z}")
 
 
 def revoke(username: str):

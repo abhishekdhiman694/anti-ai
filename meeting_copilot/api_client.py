@@ -1,8 +1,9 @@
 """Thin HTTP client for the Meeting Copilot backend. This is the ONLY place
 the exe talks to "the brain" - no OpenAI key or prompts live in the client
-at all; every call is authenticated with the username/password you were
-given, and the server re-checks that credential (including expiry) on every
-single request, not just once at login."""
+at all. The username/password you were given can be exchanged for a session
+exactly ONCE (login() below); every call after that authenticates with the
+session token it returns, and the server re-checks that session (including
+expiry/revocation) on every single request."""
 
 import base64
 
@@ -11,6 +12,7 @@ import requests
 SERVER_URL: str | None = None
 _username: str | None = None
 _password: str | None = None
+_session_token: str | None = None
 
 # Render's free tier can cold-start in ~30-50s if the server has been idle -
 # generous timeouts avoid a slow-wake being mistaken for a hard failure.
@@ -18,7 +20,8 @@ _TIMEOUT = 60
 
 
 class AuthError(Exception):
-    """Credentials are missing, wrong, expired, or revoked (HTTP 401)."""
+    """Credentials are missing, wrong, expired, revoked, or already used to
+    sign in once before (HTTP 401/403)."""
 
 
 def configure(server_url: str, username: str, password: str):
@@ -29,13 +32,13 @@ def configure(server_url: str, username: str, password: str):
 
 
 def _post(path: str, json_body: dict) -> dict:
-    if not SERVER_URL or not _username or not _password:
-        raise RuntimeError("api_client.configure() was never called")
+    if not SERVER_URL or not _session_token:
+        raise RuntimeError("not logged in yet - call login() first")
     try:
         resp = requests.post(
             f"{SERVER_URL}{path}",
             json=json_body,
-            auth=(_username, _password),
+            headers={"X-Session-Token": _session_token},
             timeout=_TIMEOUT,
         )
     except requests.RequestException as e:
@@ -49,8 +52,11 @@ def _post(path: str, json_body: dict) -> dict:
 
 
 def login() -> float:
-    """Returns the credential's expires_at (unix timestamp) on success.
-    Raises AuthError on bad/expired/revoked credentials."""
+    """Exchanges the configured username/password for a session token - this
+    can only succeed ONCE per credential. Returns the credential's
+    expires_at (unix timestamp) on success. Raises AuthError on bad/expired/
+    revoked/already-used credentials."""
+    global _session_token
     if not SERVER_URL or not _username or not _password:
         raise RuntimeError("api_client.configure() was never called")
     try:
@@ -59,11 +65,33 @@ def login() -> float:
         )
     except requests.RequestException as e:
         raise RuntimeError(f"could not reach server: {e}") from e
+    if resp.status_code in (401, 403):
+        detail = resp.json().get("detail", "unauthorized") if resp.content else "unauthorized"
+        raise AuthError(detail)
+    resp.raise_for_status()
+    data = resp.json()
+    _session_token = data["session_token"]
+    return data["expires_at"]
+
+
+def check_session():
+    """Re-validates the existing session (expiry/revocation) WITHOUT
+    consuming a new login - safe to call repeatedly for a periodic
+    background health check, unlike login()."""
+    if not SERVER_URL or not _session_token:
+        raise RuntimeError("not logged in yet - call login() first")
+    try:
+        resp = requests.get(
+            f"{SERVER_URL}/session-status",
+            headers={"X-Session-Token": _session_token},
+            timeout=_TIMEOUT,
+        )
+    except requests.RequestException as e:
+        raise RuntimeError(f"could not reach server: {e}") from e
     if resp.status_code == 401:
         detail = resp.json().get("detail", "unauthorized") if resp.content else "unauthorized"
         raise AuthError(detail)
     resp.raise_for_status()
-    return resp.json()["expires_at"]
 
 
 def analyze_text(snippet: str, source: str) -> str | None:
